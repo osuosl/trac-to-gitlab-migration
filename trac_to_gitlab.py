@@ -122,32 +122,30 @@ def export_trac_tickets():
     )
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, summary, description, component, priority, resolution, milestone, version, status, reporter, owner, time, type, cc FROM ticket")
+    cursor.execute("SELECT id, summary, description, component, priority, resolution, milestone, version, status, reporter, owner, type, cc, time FROM ticket")
     tickets = cursor.fetchall()
 
     for ticket in tickets:
-        ticket_id, summary, description, component, priority, resolution, milestone, version, status, reporter, owner, time, type, cc = ticket
-        cursor.execute("SELECT author, time, newvalue, oldvalue, field FROM ticket_change WHERE ticket=%s", (ticket_id,))
-        changes = cursor.fetchall()
-        comments = [change for change in changes if change[4] == 'comment']
-        status_changes = [change for change in changes if change[4] != 'comment']
+        ticket_id, summary, description, component, priority, resolution, milestone, version, status, reporter, owner, ticket_type, cc, time = ticket
 
+        cursor.execute("SELECT author, time, newvalue FROM ticket_change WHERE ticket=%s AND field='comment'", (ticket_id,))
+        comments = cursor.fetchall()
         comments_list = []
         for comment in comments:
-            author, timestamp, comment_text, _, _ = comment
+            author, timestamp, comment_text = comment
             timestamp_utc = datetime.fromtimestamp(timestamp / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             comments_list.append({'author': author, 'time': timestamp_utc, 'comment': comment_text})
 
-        attachments = []
         cursor.execute("SELECT filename, description, author, time FROM attachment WHERE type='ticket' AND id::text=%s", (str(ticket_id),))
-        attachment_rows = cursor.fetchall()
-        for attachment in attachment_rows:
+        attachments = cursor.fetchall()
+        attachments_list = []
+        for attachment in attachments:
             filename, description, author, time = attachment
             timestamp_utc = datetime.fromtimestamp(time / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             attachment_obj = Attachment(env, 'ticket', ticket_id, filename)
             file_path = attachment_obj.path
             if os.path.isfile(file_path):
-                attachments.append({
+                attachments_list.append({
                     'ticket_id': ticket_id,
                     'filename': filename,
                     'description': description,
@@ -158,11 +156,13 @@ def export_trac_tickets():
             else:
                 print("Warning: File {} not found for ticket ID {}".format(file_path, ticket_id))
 
+        cursor.execute("SELECT author, time, field, newvalue FROM ticket_change WHERE ticket=%s AND field IN ('component', 'priority', 'resolution', 'version')", (ticket_id,))
+        status_changes = cursor.fetchall()
         status_changes_list = []
         for change in status_changes:
-            author, timestamp, newvalue, oldvalue, field = change
+            author, timestamp, field, newvalue = change
             timestamp_utc = datetime.fromtimestamp(timestamp / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
-            status_changes_list.append({'author': author, 'time': timestamp_utc, 'field': field, 'newvalue': newvalue, 'oldvalue': oldvalue})
+            status_changes_list.append({'author': author, 'time': timestamp_utc, 'field': field, 'newvalue': newvalue})
 
         trac_tickets.append({
             'id': ticket_id,
@@ -176,11 +176,11 @@ def export_trac_tickets():
             'status': status,
             'reporter': reporter,
             'owner': owner,
-            'time': datetime.fromtimestamp(time / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
-            'type': type,
+            'type': ticket_type,
             'cc': cc,
+            'time': datetime.fromtimestamp(time / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
-            'attachments': attachments,
+            'attachments': attachments_list,
             'status_changes': status_changes_list
         })
 
@@ -208,7 +208,7 @@ def import_to_gitlab():
     label_cache = {}
     milestone_cache = {}
 
-    def create_issue(ticket_id, title, description, labels, milestone_id, created_at, assignee_id):
+    def create_issue(ticket_id, title, description, labels, milestone_id, assignee_id, created_at):
         url = "{}/projects/{}/issues".format(GITLAB_API_URL, PROJECT_ID)
         headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
         data = {
@@ -217,8 +217,8 @@ def import_to_gitlab():
             "description": description,
             "labels": labels,
             "milestone_id": milestone_id,
-            "created_at": created_at,
-            "assignee_ids": [assignee_id] if assignee_id else []
+            "assignee_id": assignee_id,
+            "created_at": created_at
         }
         response = requests.post(url, headers=headers, json=data)
         return response.json()
@@ -226,20 +226,17 @@ def import_to_gitlab():
     def update_issue_state(issue_id, state):
         url = "{}/projects/{}/issues/{}".format(GITLAB_API_URL, PROJECT_ID, issue_id)
         headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
-        data = {
-            "state_event": state
-        }
+        data = {"state_event": state}
         response = requests.put(url, headers=headers, json=data)
         return response.json()
 
-    def add_comment(issue_id, body):
-        url = "{}/projects/{}/issues/{}/notes".format(GITLAB_API_URL, PROJECT_ID, issue_id)
-        headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
-        data = {
-            "body": body
-        }
-        response = requests.post(url, headers=headers, json=data)
-        return response.json()
+    def add_comment(issue_id, comment, created_at):
+        if comment.strip():  # Only add non-empty comments
+            url = "{}/projects/{}/issues/{}/notes".format(GITLAB_API_URL, PROJECT_ID, issue_id)
+            headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
+            data = {"body": comment, "created_at": created_at}
+            response = requests.post(url, headers=headers, json=data)
+            return response.json()
 
     def add_attachment(issue_id, attachment):
         url = "{}/projects/{}/uploads".format(GITLAB_API_URL, PROJECT_ID)
@@ -251,9 +248,10 @@ def import_to_gitlab():
             upload_response = response.json()
 
         if 'markdown' in upload_response:
-            comment_body = "Attachment by @{} on {}:\n\n{}".format(
-                attachment['author'], attachment['time'], upload_response['markdown'])
-            add_comment(issue_id, comment_body)
+            comment_body = "Attachment by @{} on {}: {}\n\n{}".format(
+                attachment['author'], attachment['time'], upload_response['markdown'], attachment['description']
+            )
+            add_comment(issue_id, comment_body, attachment['time'])
             print("Added attachment to GitLab issue ID: {}".format(issue_id))
         else:
             print("Failed to upload attachment for ticket ID: {}".format(attachment['ticket_id']))
@@ -277,22 +275,28 @@ def import_to_gitlab():
         if ticket['type']:
             label = get_or_create_label(ticket['type'], label_cache)
             labels.append(label['name'])
-        if ticket['status']:
-            label = get_or_create_label(ticket['status'], label_cache)
-            labels.append(label['name'])
 
         milestone_id = None
         if ticket['milestone']:
             milestone = get_or_create_milestone(ticket['milestone'], milestone_cache)
             milestone_id = milestone['id']
 
+        assignee_id = user_map.get(ticket['owner'])
+
         # Format description with "Comment by @user on date" and convert to markdown
         description = "Comment by @{} on {}:\n\n{}".format(ticket['reporter'], ticket['time'], ticket['description'])
         description = convert_urls_to_gitlab_markdown(description).replace('{{{', '```').replace('}}}', '```')
 
-        assignee_id = user_map.get(ticket['owner'])
+        if ticket['cc']:
+            description += "\n\nCC: {}\n".format(ticket['cc'])
+        if ticket['priority']:
+            description += "\n\nPriority: {}\n".format(ticket['priority'])
+        if ticket['resolution']:
+            description += "\n\nResolution: {}\n".format(ticket['resolution'])
+        if ticket['component']:
+            description += "\n\nComponent: {}\n".format(ticket['component'])
 
-        issue = create_issue(ticket['id'], ticket['summary'], description, ','.join(labels), milestone_id, ticket['time'], assignee_id)
+        issue = create_issue(ticket['id'], ticket['summary'], description, ','.join(labels), milestone_id, assignee_id, ticket['time'])
         issue_id = issue['id']
 
         events = ticket['comments'] + ticket['status_changes'] + ticket['attachments']
@@ -301,12 +305,12 @@ def import_to_gitlab():
         for event in events:
             if 'comment' in event:
                 comment_body = format_comment(event)
-                add_comment(issue_id, comment_body)
+                add_comment(issue_id, comment_body, event['time'])
                 print("Added comment to GitLab issue ID: {}".format(issue_id))
             elif 'field' in event:
                 change_body = "Status change by @{} on {}: {} set to {}\n".format(
                     event['author'], event['time'], event['field'], event['newvalue'])
-                add_comment(issue_id, change_body)
+                add_comment(issue_id, change_body, event['time'])
                 print("Added status change comment to GitLab issue ID: {}".format(issue_id))
             elif 'filename' in event:
                 add_attachment(issue_id, event)
