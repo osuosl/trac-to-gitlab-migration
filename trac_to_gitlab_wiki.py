@@ -20,7 +20,9 @@ GITLAB_WIKI_API_URL = '{}/projects/{}/wikis'.format(GITLAB_API_URL, PROJECT_ID)
 # List of specific pages to exclude
 exclude_pages = [
     'WikiDeletePage', 'WikiNewPage', 'WikiPageNames', 'WikiRestructuredTextLinks',
-    'Sandbox', 'InterWiki', 'PageTemplates'
+    'Sandbox', 'InterWiki', 'PageTemplates', 'RecentChanges', 'InterMapTxt',
+    'InterTrac', 'WikiFormatting', 'WikiMacros', 'WikiProcessors',
+    'WikiRestructuredText', 'WikiHtml'
 ]
 
 # Function to convert Trac wiki syntax to Markdown
