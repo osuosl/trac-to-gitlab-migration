@@ -7,7 +7,7 @@ from datetime import datetime
 from trac.env import Environment
 from trac.ticket.model import Ticket
 from trac.attachment import Attachment
-from trac.timeline.api import ITimelineEventProvider
+from trac.ticket.api import TicketSystem
 import re
 
 # Load settings
@@ -105,7 +105,8 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    for ticket_id in Ticket.select(env):
+    ticket_ids = [t[0] for t in TicketSystem(env).get_all_tickets()]
+    for ticket_id in ticket_ids:
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
