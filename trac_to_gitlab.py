@@ -1,12 +1,13 @@
 from __future__ import unicode_literals, print_function
 import os
-import psycopg2
 import requests
 import json
 import pytz
 from datetime import datetime
 from trac.env import Environment
+from trac.ticket.model import Ticket
 from trac.attachment import Attachment
+from trac.timeline.api import ITimelineEventProvider
 import re
 
 # Load settings
@@ -14,10 +15,6 @@ with open('settings.json') as f:
     settings = json.load(f)
 
 # Trac configuration
-TRAC_DB_HOST = settings['trac_db_host']
-TRAC_DB_NAME = settings['trac_db_name']
-TRAC_DB_USER = settings['trac_db_user']
-TRAC_DB_PASSWORD = settings['trac_db_password']
 TRAC_ENV_PATH = settings['trac_env_path']
 
 # GitLab configuration
@@ -40,18 +37,13 @@ def export_trac_users(usernames):
     print("Exporting Trac users...")
     trac_users = []
 
-    conn = psycopg2.connect(
-        dbname=TRAC_DB_NAME,
-        user=TRAC_DB_USER,
-        password=TRAC_DB_PASSWORD,
-        host=TRAC_DB_HOST
-    )
-    cursor = conn.cursor()
-
     for username in usernames:
-        cursor.execute("SELECT value FROM session_attribute WHERE sid = %s AND name = 'email'", (username,))
-        email_result = cursor.fetchone()
-        email = email_result[0] if email_result else None
+        email = None
+        session = env.get_known_users()
+        for sid, name, mail in session:
+            if sid == username:
+                email = mail
+                break
 
         trac_users.append({
             'username': username,
@@ -60,7 +52,6 @@ def export_trac_users(usernames):
 
         print("Exported user: {}".format(username))
 
-    conn.close()
     print("Finished exporting Trac users.")
     return trac_users
 
@@ -114,45 +105,29 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    conn = psycopg2.connect(
-        dbname=TRAC_DB_NAME,
-        user=TRAC_DB_USER,
-        password=TRAC_DB_PASSWORD,
-        host=TRAC_DB_HOST
-    )
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id, summary, description, component, priority, resolution, milestone, version, status, reporter, time FROM ticket")
-    tickets = cursor.fetchall()
-
-    for ticket in tickets:
-        ticket_id, summary, description, component, priority, resolution, milestone, version, status, reporter, time = ticket
-        cursor.execute("SELECT author, time, field, oldvalue, newvalue FROM ticket_change WHERE ticket=%s AND field IN ('comment', 'component', 'priority', 'resolution', 'version', 'status', 'type', 'owner')", (ticket_id,))
-        changes = cursor.fetchall()
+    for ticket_id in Ticket.select(env):
+        ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
-        for change in changes:
-            author, timestamp, field, oldvalue, newvalue = change
-            timestamp_utc = datetime.fromtimestamp(timestamp / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+
+        for change in ticket.get_changelog():
+            timestamp, author, field, oldvalue, newvalue, permanent = change
+            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
             else:
                 status_changes_list.append({'author': author, 'time': timestamp_utc, 'field': field, 'oldvalue': oldvalue, 'newvalue': newvalue})
 
-        cursor.execute("SELECT filename, description, author, time FROM attachment WHERE type='ticket' AND id::text=%s", (str(ticket_id),))
-        attachments = cursor.fetchall()
         attachments_list = []
-        for attachment in attachments:
-            filename, description, author, time = attachment
-            timestamp_utc = datetime.fromtimestamp(time / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
-            attachment_obj = Attachment(env, 'ticket', ticket_id, filename)
-            file_path = attachment_obj.path
+        for attachment in Attachment.select(env, 'ticket', ticket_id):
+            timestamp_utc = datetime.fromtimestamp(attachment.date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
                     'ticket_id': ticket_id,
-                    'filename': filename,
-                    'description': description,
-                    'author': author,
+                    'filename': attachment.filename,
+                    'description': attachment.description,
+                    'author': attachment.author,
                     'time': timestamp_utc,
                     'file_path': file_path
                 })
@@ -161,16 +136,16 @@ def export_trac_tickets():
 
         trac_tickets.append({
             'id': ticket_id,
-            'summary': summary,
-            'description': description,
-            'component': component,
-            'priority': priority,
-            'resolution': resolution,
-            'milestone': milestone,
-            'version': version,
-            'status': status,
-            'reporter': reporter,
-            'time': datetime.fromtimestamp(time / 1000000, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'summary': ticket['summary'],
+            'description': ticket['description'],
+            'component': ticket['component'],
+            'priority': ticket['priority'],
+            'resolution': ticket['resolution'],
+            'milestone': ticket['milestone'],
+            'version': ticket['version'],
+            'status': ticket['status'],
+            'reporter': ticket['reporter'],
+            'time': datetime.fromtimestamp(ticket.time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
@@ -178,7 +153,6 @@ def export_trac_tickets():
 
         print("Exported ticket ID: {}".format(ticket_id))
 
-    conn.close()
     trac_tickets.sort(key=lambda x: x['id'])  # Sort tickets numerically by ID
     print("Finished exporting Trac tickets.")
     return trac_tickets
