@@ -5,7 +5,7 @@ import json
 import pytz
 from datetime import datetime
 from trac.env import Environment
-from trac.ticket.model import Ticket
+from trac.ticket import Ticket
 from trac.attachment import Attachment
 import re
 
@@ -88,18 +88,11 @@ def create_gitlab_milestone(title, description, due_date=None):
     response = requests.post(url, headers=headers, json=data)
     return response.json()
 
-def get_or_create_label(label_name, label_cache, created_at):
+def get_or_create_label(label_name, label_cache):
     if label_name not in label_cache:
         label = create_gitlab_label(label_name)
         label_cache[label_name] = label
-        add_label_creation_comment(label_name, created_at)
     return label_cache[label_name]
-
-def add_label_creation_comment(label_name, created_at):
-    url = "{}/projects/{}/issues/{}/notes".format(GITLAB_API_URL, PROJECT_ID, ticket_id)
-    headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
-    data = {"body": "Label '{}' created".format(label_name), "created_at": created_at}
-    requests.post(url, headers=headers, json=data)
 
 def get_or_create_milestone(milestone_name, milestone_cache):
     if milestone_name not in milestone_cache:
@@ -111,14 +104,18 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    for ticket_id in Ticket.select(env):
+    cursor = env.get_db_cnx().cursor()
+    cursor.execute("SELECT id FROM ticket")
+    ticket_ids = [row[0] for row in cursor]
+
+    for ticket_id in ticket_ids:
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
-            timestamp_utc = datetime.fromtimestamp(float(timestamp), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
             else:
@@ -126,7 +123,7 @@ def export_trac_tickets():
 
         attachments_list = []
         for attachment in Attachment.select(env, 'ticket', ticket_id):
-            timestamp_utc = datetime.fromtimestamp(float(attachment.date), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            timestamp_utc = datetime.fromtimestamp(attachment.date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -151,7 +148,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': datetime.fromtimestamp(float(ticket.time_created), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'time': datetime.fromtimestamp(ticket.time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
@@ -232,16 +229,16 @@ def import_to_gitlab():
     for ticket in trac_tickets:
         labels = []
         if ticket['component']:
-            label = get_or_create_label(ticket['component'], label_cache, ticket['time'])
+            label = get_or_create_label(ticket['component'], label_cache)
             labels.append(label['name'])
         if ticket['priority']:
-            label = get_or_create_label(ticket['priority'], label_cache, ticket['time'])
+            label = get_or_create_label(ticket['priority'], label_cache)
             labels.append(label['name'])
         if ticket['resolution']:
-            label = get_or_create_label(ticket['resolution'], label_cache, ticket['time'])
+            label = get_or_create_label(ticket['resolution'], label_cache)
             labels.append(label['name'])
         if ticket['version']:
-            label = get_or_create_label(ticket['version'], label_cache, ticket['time'])
+            label = get_or_create_label(ticket['version'], label_cache)
             labels.append(label['name'])
 
         milestone_id = None
