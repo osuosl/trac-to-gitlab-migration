@@ -118,6 +118,7 @@ def export_trac_tickets():
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
+            timestamp = float(timestamp)  # Ensure timestamp is a float
             timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
@@ -126,7 +127,8 @@ def export_trac_tickets():
 
         attachments_list = []
         for attachment in Attachment.select(env, 'ticket', ticket_id):
-            timestamp_utc = datetime.fromtimestamp(attachment.date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            timestamp = float(attachment.date)  # Ensure timestamp is a float
+            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -151,7 +153,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': datetime.fromtimestamp(ticket.time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'time': datetime.fromtimestamp(float(ticket.time_created), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
