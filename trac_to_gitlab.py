@@ -104,11 +104,7 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    cursor = env.get_db_cnx().cursor()
-    cursor.execute("SELECT id FROM ticket")
-    ticket_ids = [row[0] for row in cursor]
-
-    for ticket_id in ticket_ids:
+    for ticket_id in Ticket.select(env):
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
