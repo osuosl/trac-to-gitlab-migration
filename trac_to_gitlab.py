@@ -5,10 +5,10 @@ import json
 import pytz
 from datetime import datetime
 from trac.env import Environment
-from trac.ticket.model import Ticket
+from trac.ticket import Ticket, Milestone, Component, Version
 from trac.attachment import Attachment
+from trac.resource import Resource
 import re
-import psycopg2
 
 # Load settings
 with open('settings.json') as f:
@@ -105,20 +105,13 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    # Connect to the Trac database
-    with env.db_query as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM ticket ORDER BY id")
-        ticket_ids = [row[0] for row in cursor.fetchall()]
-
-    for ticket_id in ticket_ids:
+    for ticket_id in Ticket.select(env):
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
-            timestamp = float(timestamp)  # Ensure timestamp is a float
             timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
@@ -126,9 +119,9 @@ def export_trac_tickets():
                 status_changes_list.append({'author': author, 'time': timestamp_utc, 'field': field, 'oldvalue': oldvalue, 'newvalue': newvalue})
 
         attachments_list = []
-        for attachment in Attachment.select(env, 'ticket', ticket_id):
-            timestamp = float(attachment.date)  # Ensure timestamp is a float
-            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+        resource = Resource('ticket', ticket_id)
+        for attachment in Attachment.select(env, resource):
+            timestamp_utc = datetime.fromtimestamp(attachment.date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -153,7 +146,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': datetime.fromtimestamp(float(ticket.time_created), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'time': datetime.fromtimestamp(ticket.time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
@@ -251,7 +244,6 @@ def import_to_gitlab():
             milestone = get_or_create_milestone(ticket['milestone'], milestone_cache)
             milestone_id = milestone['id']
 
-        # Format description with "Comment by @user on date" and convert to markdown
         description = "Comment by @{} on {}:\n\n{}".format(ticket['reporter'], ticket['time'], ticket['description'])
         description = convert_urls_to_gitlab_markdown(description).replace('{{{', '```').replace('}}}', '```')
 
@@ -274,25 +266,21 @@ def import_to_gitlab():
             elif 'filename' in event:
                 add_attachment(issue_id, event)
 
-        # Update the state of the issue if it needs to be closed
         if ticket['status'] in ['closed', 'resolved']:
             update_issue_state(issue_id, 'close')
 
     print("Finished importing tickets, comments, and attachments into GitLab.")
 
 def main():
-    # Load usernames
     usernames = load_usernames()
 
-    # Export and create users in GitLab
     trac_users = export_trac_users(usernames)
     for user in trac_users:
-        if user['email']:  # Only create user if email is available
+        if user['email']:
             gitlab_user = create_gitlab_user(user['username'], user['email'])
             user_map[user['username']] = gitlab_user['id']
             print("Created GitLab user: {} with ID: {}".format(user['username'], gitlab_user['id']))
 
-    # Export tickets and comments to GitLab
     import_to_gitlab()
 
 if __name__ == "__main__":
