@@ -5,9 +5,10 @@ import json
 import pytz
 from datetime import datetime
 from trac.env import Environment
-from trac.ticket import Ticket
+from trac.ticket.model import Ticket
 from trac.attachment import Attachment
 import re
+import psycopg2
 
 # Load settings
 with open('settings.json') as f:
@@ -104,7 +105,13 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    for ticket_id in Ticket.select(env):
+    # Connect to the Trac database
+    with env.db_query as db:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM ticket ORDER BY id")
+        ticket_ids = [row[0] for row in cursor.fetchall()]
+
+    for ticket_id in ticket_ids:
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
