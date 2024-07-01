@@ -5,9 +5,10 @@ import json
 import pytz
 from datetime import datetime
 from trac.env import Environment
-from trac.ticket import Ticket, Milestone, Component, Version
+from trac.ticket.model import Ticket, Milestone, Component, Version
 from trac.attachment import Attachment
 from trac.resource import Resource
+from trac.ticket.query import Query
 import re
 
 # Load settings
@@ -105,7 +106,11 @@ def export_trac_tickets():
     print("Exporting Trac tickets...")
     trac_tickets = []
 
-    for ticket_id in Ticket.select(env):
+    query = Query(env, "max=0&order=id")
+    tickets = query.execute()
+
+    for ticket_info in tickets:
+        ticket_id = ticket_info['id']
         ticket = Ticket(env, ticket_id)
         comments_list = []
         status_changes_list = []
