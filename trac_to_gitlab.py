@@ -118,8 +118,8 @@ def export_trac_tickets():
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
             if timestamp is not None:
-                timestamp = parse_datetime_str(timestamp)  # Convert timestamp to datetime object
-                timestamp_utc = timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
+                timestamp_utc = parse_datetime_str(str(timestamp))  # Convert timestamp to datetime object
+                timestamp_utc = timestamp_utc.strftime('%Y-%m-%d %H:%M:%S %Z')
             else:
                 timestamp_utc = None
             if field == 'comment':
@@ -131,10 +131,10 @@ def export_trac_tickets():
         resource = Resource('ticket', ticket_id)
         for attachment in Attachment.select(env, resource):
             if attachment.date is not None:
-                attachment_date = parse_datetime_str(attachment.date)  # Convert attachment date to datetime object
-                timestamp_utc = attachment_date.strftime('%Y-%m-%d %H:%M:%S %Z')
+                attachment_date = parse_datetime_str(str(attachment.date))  # Convert attachment date to datetime object
+                attachment_date = attachment_date.strftime('%Y-%m-%d %H:%M:%S %Z')
             else:
-                timestamp_utc = None
+                attachment_date = None
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -142,14 +142,14 @@ def export_trac_tickets():
                     'filename': attachment.filename,
                     'description': attachment.description,
                     'author': attachment.author,
-                    'time': timestamp_utc,
+                    'time': attachment_date,
                     'file_path': file_path
                 })
             else:
                 print("Warning: File {} not found for ticket ID {}".format(file_path, ticket_id))
 
         if ticket.time_created is not None:
-            ticket_time_created = parse_datetime_str(ticket.time_created)  # Convert ticket creation time to datetime object
+            ticket_time_created = parse_datetime_str(str(ticket.time_created))  # Convert ticket creation time to datetime object
             ticket_time_created_utc = ticket_time_created.strftime('%Y-%m-%d %H:%M:%S %Z')
         else:
             ticket_time_created_utc = None
