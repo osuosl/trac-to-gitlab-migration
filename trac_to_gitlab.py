@@ -128,7 +128,11 @@ def export_trac_tickets():
         attachments_list = []
         resource = Resource('ticket', ticket_id)
         for attachment in Attachment.select(env, resource):
-            timestamp_utc = datetime.fromtimestamp(float(attachment.date), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            if not isinstance(attachment.date, (int, float)):
+                attachment_date = float(attachment.date)
+            else:
+                attachment_date = attachment.date
+            timestamp_utc = datetime.fromtimestamp(attachment_date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -142,6 +146,10 @@ def export_trac_tickets():
             else:
                 print("Warning: File {} not found for ticket ID {}".format(file_path, ticket_id))
 
+        if not isinstance(ticket.time_created, (int, float)):
+            ticket_time_created = float(ticket.time_created)
+        else:
+            ticket_time_created = ticket.time_created
         trac_tickets.append({
             'id': ticket_id,
             'summary': ticket['summary'],
@@ -153,7 +161,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': datetime.fromtimestamp(float(ticket.time_created), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'time': datetime.fromtimestamp(ticket_time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
