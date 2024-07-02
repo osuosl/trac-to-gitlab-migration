@@ -117,10 +117,9 @@ def export_trac_tickets():
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
-            if isinstance(timestamp, (int, float)):
-                timestamp_utc = datetime.fromtimestamp(float(timestamp), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
-            else:
-                timestamp_utc = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S %Z').strftime('%Y-%m-%d %H:%M:%S %Z')
+            if not isinstance(timestamp, (int, float)):
+                timestamp = float(timestamp)
+            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
             else:
