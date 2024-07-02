@@ -117,9 +117,11 @@ def export_trac_tickets():
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
-            if not isinstance(timestamp, (int, float)):
+            if timestamp is not None:
                 timestamp = float(timestamp)
-            timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+                timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            else:
+                timestamp_utc = None
             if field == 'comment':
                 comments_list.append({'author': author, 'time': timestamp_utc, 'comment': newvalue})
             else:
@@ -128,11 +130,11 @@ def export_trac_tickets():
         attachments_list = []
         resource = Resource('ticket', ticket_id)
         for attachment in Attachment.select(env, resource):
-            if not isinstance(attachment.date, (int, float)):
+            if attachment.date is not None:
                 attachment_date = float(attachment.date)
+                timestamp_utc = datetime.fromtimestamp(attachment_date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
             else:
-                attachment_date = attachment.date
-            timestamp_utc = datetime.fromtimestamp(attachment_date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+                timestamp_utc = None
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -146,10 +148,12 @@ def export_trac_tickets():
             else:
                 print("Warning: File {} not found for ticket ID {}".format(file_path, ticket_id))
 
-        if not isinstance(ticket.time_created, (int, float)):
+        if ticket.time_created is not None:
             ticket_time_created = float(ticket.time_created)
+            ticket_time_created_utc = datetime.fromtimestamp(ticket_time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
         else:
-            ticket_time_created = ticket.time_created
+            ticket_time_created_utc = None
+
         trac_tickets.append({
             'id': ticket_id,
             'summary': ticket['summary'],
@@ -161,7 +165,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': datetime.fromtimestamp(ticket_time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z'),
+            'time': ticket_time_created_utc,
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
@@ -235,7 +239,7 @@ def import_to_gitlab():
             add_comment(issue_id, comment_body, attachment['time'])
             print("Added attachment to GitLab issue ID: {}".format(issue_id))
         else:
-            print("Failed to upload attachment for ticket ID: {}".format(attachment['ticket_id']))
+            print("Failed to upload attachment for ticket ID {}: {}".format(attachment['ticket_id'], response.text))
 
     trac_tickets = export_trac_tickets()
 
