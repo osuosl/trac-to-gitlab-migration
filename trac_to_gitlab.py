@@ -10,6 +10,7 @@ from trac.attachment import Attachment
 from trac.resource import Resource
 from trac.ticket.query import Query
 import re
+import dateutil.parser  # New import
 
 # Load settings
 with open('settings.json') as f:
@@ -117,9 +118,11 @@ def export_trac_tickets():
 
         for change in ticket.get_changelog():
             timestamp, author, field, oldvalue, newvalue, permanent = change
-            if timestamp is not None:
-                timestamp = float(timestamp)
-                timestamp_utc = datetime.fromtimestamp(timestamp, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            if timestamp:
+                try:
+                    timestamp_utc = dateutil.parser.parse(timestamp).strftime('%Y-%m-%d %H:%M:%S %Z')
+                except ValueError:
+                    timestamp_utc = datetime.utcfromtimestamp(float(timestamp)).strftime('%Y-%m-%d %H:%M:%S %Z')
             else:
                 timestamp_utc = None
             if field == 'comment':
@@ -130,11 +133,13 @@ def export_trac_tickets():
         attachments_list = []
         resource = Resource('ticket', ticket_id)
         for attachment in Attachment.select(env, resource):
-            if attachment.date is not None:
-                attachment_date = float(attachment.date)
-                timestamp_utc = datetime.fromtimestamp(attachment_date, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+            if attachment.date:
+                try:
+                    attachment_date = dateutil.parser.parse(attachment.date).strftime('%Y-%m-%d %H:%M:%S %Z')
+                except ValueError:
+                    attachment_date = datetime.utcfromtimestamp(float(attachment.date)).strftime('%Y-%m-%d %H:%M:%S %Z')
             else:
-                timestamp_utc = None
+                attachment_date = None
             file_path = attachment.path
             if os.path.isfile(file_path):
                 attachments_list.append({
@@ -142,17 +147,19 @@ def export_trac_tickets():
                     'filename': attachment.filename,
                     'description': attachment.description,
                     'author': attachment.author,
-                    'time': timestamp_utc,
+                    'time': attachment_date,
                     'file_path': file_path
                 })
             else:
                 print("Warning: File {} not found for ticket ID {}".format(file_path, ticket_id))
 
-        if ticket.time_created is not None:
-            ticket_time_created = float(ticket.time_created)
-            ticket_time_created_utc = datetime.fromtimestamp(ticket_time_created, pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %Z')
+        if ticket.time_created:
+            try:
+                ticket_time_created = dateutil.parser.parse(ticket.time_created).strftime('%Y-%m-%d %H:%M:%S %Z')
+            except ValueError:
+                ticket_time_created = datetime.utcfromtimestamp(float(ticket.time_created)).strftime('%Y-%m-%d %H:%M:%S %Z')
         else:
-            ticket_time_created_utc = None
+            ticket_time_created = None
 
         trac_tickets.append({
             'id': ticket_id,
@@ -165,7 +172,7 @@ def export_trac_tickets():
             'version': ticket['version'],
             'status': ticket['status'],
             'reporter': ticket['reporter'],
-            'time': ticket_time_created_utc,
+            'time': ticket_time_created,
             'comments': comments_list,
             'attachments': attachments_list,
             'status_changes': status_changes_list
@@ -232,12 +239,10 @@ def import_to_gitlab():
             response = requests.post(url, headers=headers, files=files)
             upload_response = response.json()
 
-        if 'markdown' in upload_response:
-            comment_body = "Attachment by @{} on {}: {}\n\n{}".format(
-                attachment['author'], attachment['time'], upload_response['markdown'], attachment['description']
-            )
-            add_comment(issue_id, comment_body, attachment['time'])
-            print("Added attachment to GitLab issue ID: {}".format(issue_id))
+        if response.status_code == 201:
+            attachment_comment = "Attachment by @{} on {}: [{}]({})".format(
+                attachment['author'], attachment['time'], attachment['filename'], upload_response['url'])
+            add_comment(issue_id, attachment_comment, attachment['time'])
         else:
             print("Failed to upload attachment for ticket ID {}: {}".format(attachment['ticket_id'], response.text))
 
