@@ -67,7 +67,7 @@ def create_gitlab_user(username, email):
         "reset_password": True
     }
     response = requests.post(url, headers=headers, json=data)
-    return response.json()
+    return json.loads(response.content)
 
 def create_gitlab_label(name, color="#428BCA"):
     url = "{}/projects/{}/labels".format(GITLAB_API_URL, PROJECT_ID)
@@ -77,7 +77,7 @@ def create_gitlab_label(name, color="#428BCA"):
         "color": color
     }
     response = requests.post(url, headers=headers, json=data)
-    return response.json()
+    return json.loads(response.content)
 
 def create_gitlab_milestone(title, description, due_date=None):
     url = "{}/projects/{}/milestones".format(GITLAB_API_URL, PROJECT_ID)
@@ -88,7 +88,7 @@ def create_gitlab_milestone(title, description, due_date=None):
         "due_date": due_date
     }
     response = requests.post(url, headers=headers, json=data)
-    return response.json()
+    return json.loads(response.content)
 
 def get_or_create_label(label_name, label_cache):
     if label_name not in label_cache:
@@ -216,14 +216,14 @@ def import_to_gitlab():
             "created_at": created_at
         }
         response = requests.post(url, headers=headers, json=data)
-        return response.json()
+        return json.loads(response.content)
 
     def update_issue_state(issue_id, state):
         url = "{}/projects/{}/issues/{}".format(GITLAB_API_URL, PROJECT_ID, issue_id)
         headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
         data = {"state_event": state}
         response = requests.put(url, headers=headers, json=data)
-        return response.json()
+        return json.loads(response.content)
 
     def add_comment(issue_id, comment, created_at):
         if comment.strip():  # Only add non-empty comments
@@ -231,15 +231,15 @@ def import_to_gitlab():
             headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
             data = {"body": comment, "created_at": created_at}
             response = requests.post(url, headers=headers, json=data)
-            return response.json()
+            return json.loads(response.content)
 
     def add_attachment(issue_id, attachment):
         url = "{}/projects/{}/uploads".format(GITLAB_API_URL, PROJECT_ID)
         headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
-        files = {"file": open(attachment['file_path'], 'rb')}
+        files = {'file': (attachment['filename'], open(attachment['file_path'], 'rb'))}
         response = requests.post(url, headers=headers, files=files)
         if response.status_code == 201:
-            attachment_url = response.json()['url']
+            attachment_url = json.loads(response.content)['url']
             attachment_markdown = "[{}]({})".format(attachment['filename'], attachment_url)
             comment_body = "Attachment added by @{} on {}:\n\n{}".format(
                 attachment['author'], attachment['time'], attachment_markdown)
