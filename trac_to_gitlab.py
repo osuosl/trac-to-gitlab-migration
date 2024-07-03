@@ -87,7 +87,7 @@ def create_gitlab_milestone(title, description, due_date=None):
         "description": description,
         "due_date": due_date
     }
-    response = requests.post(url, headers=headers, json(data)
+    response = requests.post(url, headers=headers, json=data)
     return response.json()
 
 def get_or_create_label(label_name, label_cache):
