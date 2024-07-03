@@ -3,7 +3,7 @@ import os
 import requests
 import json
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 from trac.env import Environment
 from trac.ticket.model import Ticket, Milestone, Component, Version
 from trac.attachment import Attachment
@@ -87,7 +87,7 @@ def create_gitlab_milestone(title, description, due_date=None):
         "description": description,
         "due_date": due_date
     }
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, json(data)
     return response.json()
 
 def get_or_create_label(label_name, label_cache):
@@ -183,7 +183,7 @@ def parse_datetime_str(dt_str):
     naive_dt = datetime.strptime(naive_dt_str.strip(), '%Y-%m-%d %H:%M:%S')
     if tz_offset:
         tz_hours, tz_minutes = map(int, tz_offset.split(':'))
-        tz_delta = pytz.timedelta(hours=tz_hours, minutes=tz_minutes)
+        tz_delta = timedelta(hours=tz_hours, minutes=tz_minutes)
         return naive_dt.replace(tzinfo=pytz.UTC) - tz_delta
     return naive_dt.replace(tzinfo=pytz.UTC)
 
