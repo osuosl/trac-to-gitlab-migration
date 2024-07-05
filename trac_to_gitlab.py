@@ -28,6 +28,7 @@ user_map = {}
 
 # Initialize Trac environment
 env = Environment(TRAC_ENV_PATH)
+db = env.get_db_cnx()  # Get the database connection
 
 def load_usernames():
     with open('usernames.txt') as f:
@@ -129,7 +130,7 @@ def export_trac_tickets():
 
         attachments_list = []
         resource = Resource('ticket', ticket_id)
-        for attachment in Attachment.select(env, resource):
+        for attachment in Attachment.select(env, resource, db):
             if attachment.date is not None:
                 attachment_date = parse_datetime_str(str(attachment.date))  # Convert attachment date to datetime object
                 attachment_date = attachment_date.strftime('%Y-%m-%d %H:%M:%S %Z')
@@ -230,7 +231,7 @@ def import_to_gitlab():
             url = "{}/projects/{}/issues/{}/notes".format(GITLAB_API_URL, PROJECT_ID, issue_id)
             headers = {"PRIVATE-TOKEN": GITLAB_TOKEN}
             data = {"body": comment, "created_at": created_at}
-            response = requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json(data))
             return json.loads(response.content)
 
     def add_attachment(issue_id, attachment):
